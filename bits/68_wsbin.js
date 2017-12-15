@@ -261,10 +261,12 @@ function parse_BrtHLink(data, length, opts) {
 	var tooltip = parse_XLWideString(data);
 	var display = parse_XLWideString(data);
 	data.l = end;
-	return {rfx:rfx, relId:relId, loc:loc, Tooltip:tooltip, display:display};
+	var o = ({rfx:rfx, relId:relId, loc:loc, display:display}/*:any*/);
+	if(tooltip) o.Tooltip = tooltip;
+	return o;
 }
-function write_BrtHLink(l, rId, o) {
-	if(o == null) o = new_buf(50+4*l[1].Target.length);
+function write_BrtHLink(l, rId) {
+	var o = new_buf(50+4*(l[1].Target.length + (l[1].Tooltip || "").length));
 	write_UncheckedRfX({s:decode_cell(l[0]), e:decode_cell(l[0])}, o);
 	write_RelID("rId" + rId, o);
 	var locidx = l[1].Target.indexOf("#");
@@ -319,25 +321,16 @@ function write_BrtColInfo(C/*:number*/, col, o) {
 }
 
 /* [MS-XLSB] 2.4.672 BrtMargins */
-function parse_BrtMargins(data, length, opts) {
-	return {
-		left: parse_Xnum(data, 8),
-		right: parse_Xnum(data, 8),
-		top: parse_Xnum(data, 8),
-		bottom: parse_Xnum(data, 8),
-		header: parse_Xnum(data, 8),
-		footer: parse_Xnum(data, 8)
-	};
+var BrtMarginKeys = ["left","right","top","bottom","header","footer"];
+function parse_BrtMargins(data, length, opts)/*:Margins*/ {
+	var margins = ({}/*:any*/);
+	BrtMarginKeys.forEach(function(k) { margins[k] = parse_Xnum(data, 8); });
+	return margins;
 }
-function write_BrtMargins(margins, o) {
+function write_BrtMargins(margins/*:Margins*/, o) {
 	if(o == null) o = new_buf(6*8);
 	default_margins(margins);
-	write_Xnum(margins.left, o);
-	write_Xnum(margins.right, o);
-	write_Xnum(margins.top, o);
-	write_Xnum(margins.bottom, o);
-	write_Xnum(margins.header, o);
-	write_Xnum(margins.footer, o);
+	BrtMarginKeys.forEach(function(k) { write_Xnum((margins/*:any*/)[k], o); });
 	return o;
 }
 
@@ -389,7 +382,7 @@ function write_BrtSheetProtection(sp, o) {
 }
 
 /* [MS-XLSB] 2.1.7.61 Worksheet */
-function parse_ws_bin(data, _opts, rels, wb, themes, styles)/*:Worksheet*/ {
+function parse_ws_bin(data, _opts, idx, rels, wb, themes, styles)/*:Worksheet*/ {
 	if(!data) return data;
 	var opts = _opts || {};
 	if(!rels) rels = {'!id':{}};
@@ -409,15 +402,16 @@ function parse_ws_bin(data, _opts, rels, wb, themes, styles)/*:Worksheet*/ {
 
 	var array_formulae = [];
 	var shared_formulae = {};
-	var supbooks = ([[]]/*:any*/);
+	var supbooks = opts.supbooks || ([[]]/*:any*/);
 	supbooks.sharedf = shared_formulae;
 	supbooks.arrayf = array_formulae;
 	supbooks.SheetNames = wb.SheetNames || wb.Sheets.map(function(x) { return x.name; });
-	opts.supbooks = supbooks;
-	for(var i = 0; i < wb.Names.length; ++i) supbooks[0][i+1] = wb.Names[i];
+	if(!opts.supbooks) {
+		opts.supbooks = supbooks;
+		for(var i = 0; i < wb.Names.length; ++i) supbooks[0][i+1] = wb.Names[i];
+	}
 
 	var colinfo = [], rowinfo = [];
-	var defwidth = 0, defheight = 0; // twips / MDW respectively
 	var seencol = false;
 
 	recordhopper(data, function ws_parse(val, R_n, RT) {
@@ -499,6 +493,8 @@ function parse_ws_bin(data, _opts, rels, wb, themes, styles)/*:Worksheet*/ {
 					val.Target = rel.Target;
 					if(val.loc) val.Target += "#"+val.loc;
 					val.Rel = rel;
+				} else if(val.relId == '') {
+					val.Target = "#" + val.loc;
 				}
 				for(R=val.rfx.s.r;R<=val.rfx.e.r;++R) for(C=val.rfx.s.c;C<=val.rfx.e.c;++C) {
 					if(opts.dense) {
@@ -543,6 +539,11 @@ function parse_ws_bin(data, _opts, rels, wb, themes, styles)/*:Worksheet*/ {
 
 			case 0x01DC: /* 'BrtMargins' */
 				s['!margins'] = val;
+				break;
+
+			case 0x0093: /* 'BrtWsProp' */
+				if(!wb.Sheets[idx]) wb.Sheets[idx] = {};
+				if(val.name) wb.Sheets[idx].CodeName = val.name;
 				break;
 
 			case 0x01E5: /* 'BrtWsFmtInfo' */
@@ -599,7 +600,6 @@ function parse_ws_bin(data, _opts, rels, wb, themes, styles)/*:Worksheet*/ {
 			case 0x0032: /* 'BrtValueMeta' */
 			case 0x0816: /* 'BrtWebExtension' */
 			case 0x0415: /* 'BrtWsFmtInfoEx14' */
-			case 0x0093: /* 'BrtWsProp' */
 				break;
 
 			case 0x0023: /* 'BrtFRTBegin' */
@@ -641,13 +641,13 @@ function parse_ws_bin(data, _opts, rels, wb, themes, styles)/*:Worksheet*/ {
 /* TODO: something useful -- this is a stub */
 function write_ws_bin_cell(ba/*:BufArray*/, cell/*:Cell*/, R/*:number*/, C/*:number*/, opts, ws/*:Worksheet*/) {
 	if(cell.v === undefined) return "";
-	var vv = ""; var olddate = null;
+	var vv = "";
 	switch(cell.t) {
 		case 'b': vv = cell.v ? "1" : "0"; break;
 		case 'd': // no BrtCellDate :(
+			cell = dup(cell);
 			cell.z = cell.z || SSF._table[14];
-			olddate = cell.v;
-			cell.v = datenum((cell.v/*:any*/)); cell.t = 'n';
+			cell.v = datenum(parseDate(cell.v)); cell.t = 'n';
 			break;
 		/* falls through */
 		case 'n': case 'e': vv = ''+cell.v; break;
@@ -673,7 +673,6 @@ function write_ws_bin_cell(ba/*:BufArray*/, cell/*:Cell*/, R/*:number*/, C/*:num
 			/* TODO: determine threshold for Real vs RK */
 			if(cell.v == (cell.v | 0) && cell.v > -1000 && cell.v < 1000) write_record(ba, "BrtCellRk", write_BrtCellRk(cell, o));
 			else write_record(ba, "BrtCellReal", write_BrtCellReal(cell, o));
-			if(olddate) { cell.t = 'd'; cell.v = olddate; }
 			return;
 		case 'b':
 			o.t = "b";
@@ -778,12 +777,13 @@ function write_SHEETPROTECT(ba, ws) {
 function write_ws_bin(idx/*:number*/, opts, wb/*:Workbook*/, rels) {
 	var ba = buf_array();
 	var s = wb.SheetNames[idx], ws = wb.Sheets[s] || {};
+	var c/*:string*/ = s; try { if(wb && wb.Workbook) c = wb.Workbook.Sheets[idx].CodeName || c; } catch(e) {}
 	var r = safe_decode_range(ws['!ref'] || "A1");
 	ws['!links'] = [];
 	/* passed back to write_zip and removed there */
 	ws['!comments'] = [];
 	write_record(ba, "BrtBeginSheet");
-	write_record(ba, "BrtWsProp", write_BrtWsProp(s));
+	write_record(ba, "BrtWsProp", write_BrtWsProp(c));
 	write_record(ba, "BrtWsDim", write_BrtWsDim(r));
 	write_WSVIEWS2(ba, ws);
 	write_WSFMTINFO(ba, ws);

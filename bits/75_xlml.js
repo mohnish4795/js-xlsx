@@ -151,7 +151,7 @@ function parse_xlml_data(xml, ss, data, cell/*:any*/, base, styles, csty, row, a
 		});
 		cell.s = S;
 	}
-	cell.ixfe = cell.StyleID !== undefined ? cell.StyleID : 'Default';
+	if(cell.StyleID !== undefined) cell.ixfe = cell.StyleID;
 }
 
 function xlml_clean_comment(comment/*:any*/) {
@@ -196,7 +196,7 @@ function parse_xlml_xml(d, _opts)/*:Workbook*/ {
 	var comments = [], comment = {};
 	var cstys = [], csty, seencol = false;
 	var arrayf = [];
-	var rowinfo = [], rowobj = {};
+	var rowinfo = [], rowobj = {}, cc = 0, rr = 0;
 	var Workbook/*:WBWBProps*/ = ({ Sheets:[], WBProps:{date1904:false} }/*:any*/), wsprops = {};
 	xlmlregex.lastIndex = 0;
 	str = str.replace(/<!--([\s\S]*?)-->/mg,"");
@@ -216,12 +216,13 @@ function parse_xlml_xml(d, _opts)/*:Workbook*/ {
 					} else cursheet[encode_col(c) + encode_row(r)] = cell;
 				}
 				if(cell.HRef) {
-					cell.l = {Target:cell.HRef, Tooltip:cell.HRefScreenTip};
+					cell.l = ({Target:cell.HRef}/*:any*/);
+					if(cell.HRefScreenTip) cell.l.Tooltip = cell.HRefScreenTip;
 					delete cell.HRef; delete cell.HRefScreenTip;
 				}
 				if(cell.MergeAcross || cell.MergeDown) {
-					var cc = c + (parseInt(cell.MergeAcross,10)|0);
-					var rr = r + (parseInt(cell.MergeDown,10)|0);
+					cc = c + (parseInt(cell.MergeAcross,10)|0);
+					rr = r + (parseInt(cell.MergeDown,10)|0);
 					mergecells.push({s:{c:c,r:r},e:{c:cc,r:rr}});
 				}
 				if(!opts.sheetStubs) { if(cell.MergeAcross) c = cc + 1; else ++c; }
@@ -945,9 +946,9 @@ function write_ws_xlml_wsopts(ws/*:Worksheet*/, opts, idx/*:number*/, wb/*:Workb
 		if(ws['!protect'].selectLockedCells != null && !ws['!protect'].selectLockedCells) o.push(writetag("EnableSelection", "NoSelection"));
 		else if(ws['!protect'].selectUnlockedCells != null && !ws['!protect'].selectUnlockedCells) o.push(writetag("EnableSelection", "UnlockedCells"));
 	[
-		[ "formatColumns", "AllowFormatCells" ],
-		[ "formatRows", "AllowSizeCols" ],
-		[ "formatCells", "AllowSizeRows" ],
+		[ "formatCells", "AllowFormatCells" ],
+		[ "formatColumns", "AllowSizeCols" ],
+		[ "formatRows", "AllowSizeRows" ],
 		[ "insertColumns", "AllowInsertCols" ],
 		[ "insertRows", "AllowInsertRows" ],
 		[ "insertHyperlinks", "AllowInsertHyperlinks" ],
@@ -962,7 +963,7 @@ function write_ws_xlml_wsopts(ws/*:Worksheet*/, opts, idx/*:number*/, wb/*:Workb
 	if(o.length == 0) return "";
 	return writextag("WorksheetOptions", o.join(""), {xmlns:XLMLNS.x});
 }
-function write_ws_xlml_comment(comments) {
+function write_ws_xlml_comment(comments/*:Array<any>*/)/*:string*/ {
 	return comments.map(function(c) {
 		// TODO: formatted text
 		var t = xlml_unfixstr(c.t||"");
@@ -970,7 +971,7 @@ function write_ws_xlml_comment(comments) {
 		return writextag("Comment", d, {"ss:Author":c.a});
 	}).join("");
 }
-function write_ws_xlml_cell(cell, ref, ws, opts, idx, wb, addr)/*:string*/{
+function write_ws_xlml_cell(cell, ref/*:string*/, ws, opts, idx/*:number*/, wb, addr)/*:string*/{
 	if(!cell || cell.v == undefined && cell.f == undefined) return "<Cell></Cell>";
 
 	var attr = {};

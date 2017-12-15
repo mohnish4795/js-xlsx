@@ -10,7 +10,7 @@ into web pages with script tags:
 The library can also be imported directly from JSX code with:
 
 ```js
-import * as XLSX from 'xlsx';
+import XLSX from 'xlsx';
 ```
 
 This demo shows a simple JSX component transpiled in the browser using the babel
@@ -33,7 +33,7 @@ state in this demo is shaped like the following object:
   cols: [{ name: "A", key: 0 }, { name: "B", key: 1 }, { name: "C", key: 2 }],
   data: [
     [ "id",    "name", "value" ],
-    [    1, "sheetjs",    7262 ]
+    [    1, "sheetjs",    7262 ],
     [    2, "js-xlsx",    6969 ]
   ]
 }

@@ -38,11 +38,11 @@ function slurp(R, blob, length/*:number*/, opts) {
 	var l = length;
 	var bufs = [];
 	var d = blob.slice(blob.l,blob.l+l);
-	if(opts && opts.enc && opts.enc.insitu_decrypt) switch(R.n) {
+	if(opts && opts.enc && opts.enc.insitu) switch(R.n) {
 	case 'BOF': case 'FilePass': case 'FileLock': case 'InterfaceHdr': case 'RRDInfo': case 'RRDHead': case 'UsrExcl': break;
 	default:
 		if(d.length === 0) break;
-		opts.enc.insitu_decrypt(d);
+		opts.enc.insitu(d);
 	}
 	bufs.push(d);
 	blob.l += l;
@@ -82,10 +82,10 @@ function safe_format_xf(p/*:any*/, opts/*:ParseOpts*/, date1904/*:?boolean*/) {
 			else p.w = SSF._general(p.v);
 		}
 		else p.w = SSF.format(fmtid,p.v, {date1904:!!date1904});
-		if(opts.cellDates && fmtid && p.t == 'n' && SSF.is_date(SSF._table[fmtid] || String(fmtid))) {
-			var _d = SSF.parse_date_code(p.v); if(_d) { p.t = 'd'; p.v = new Date(_d.y, _d.m-1,_d.d,_d.H,_d.M,_d.S,_d.u); }
-		}
 	} catch(e) { if(opts.WTF) throw e; }
+	if(opts.cellDates && fmtid && p.t == 'n' && SSF.is_date(SSF._table[fmtid] || String(fmtid))) {
+		var _d = SSF.parse_date_code(p.v); if(_d) { p.t = 'd'; p.v = new Date(_d.y, _d.m-1,_d.d,_d.H,_d.M,_d.S,_d.u); }
+	}
 }
 
 function make_cell(val, ixfe, t)/*:Cell*/ {
@@ -200,6 +200,7 @@ function parse_workbook(blob, options/*:ParseOpts*/)/*:Workbook*/ {
 	/* explicit override for some broken writers */
 	opts.codepage = 1200;
 	set_cp(1200);
+	var seen_codepage = false;
 	while(blob.l < blob.length - 1) {
 		var s = blob.l;
 		var RecordType = blob.read_shift(2);
@@ -247,8 +248,8 @@ function parse_workbook(blob, options/*:ParseOpts*/)/*:Workbook*/ {
 						case 0x8000: val = 10000; break;
 						case 0x8001: val =  1252; break;
 					}
-					opts.codepage = val;
-					set_cp(val);
+					set_cp(opts.codepage = val);
+					seen_codepage = true;
 					break;
 				case 'RRTabId': opts.rrtabid = val; break;
 				case 'WinProtect': opts.winlocked = val; break;
@@ -266,7 +267,9 @@ function parse_workbook(blob, options/*:ParseOpts*/)/*:Workbook*/ {
 				case 'CalcRefMode': opts.CalcRefMode = val; break; // TODO: implement R1C1
 				case 'Uncalced': break;
 				case 'ForceFullCalculation': wb.opts.FullCalc = val; break;
-				case 'WsBool': break; // TODO
+				case 'WsBool':
+					if(val.fDialog) out["!type"] = "dialog";
+					break; // TODO
 				case 'XF': XFs.push(val); break;
 				case 'ExtSST': break; // TODO
 				case 'BookExt': break; // TODO
@@ -344,6 +347,7 @@ function parse_workbook(blob, options/*:ParseOpts*/)/*:Workbook*/ {
 					cell_valid = true;
 					out = ((options.dense ? [] : {})/*:any*/);
 
+					if(opts.biff < 8 && !seen_codepage) { seen_codepage = true; set_cp(opts.codepage = options.codepage || 1252); }
 					if(opts.biff < 5) {
 						if(cur_sheet === "") cur_sheet = "Sheet1";
 						range = {s:{r:0,c:0},e:{r:0,c:0}};
@@ -354,6 +358,7 @@ function parse_workbook(blob, options/*:ParseOpts*/)/*:Workbook*/ {
 					}
 					else cur_sheet = (Directory[s] || {name:""}).name;
 					if(val.dt == 0x20) out["!type"] = "chart";
+					if(val.dt == 0x40) out["!type"] = "macro";
 					mergecells = [];
 					objects = [];
 					array_formulae = []; opts.arrayf = array_formulae;
@@ -483,7 +488,12 @@ function parse_workbook(blob, options/*:ParseOpts*/)/*:Workbook*/ {
 					sst = val;
 				} break;
 				case 'Format': { /* val = [id, fmt] */
-					SSF.load(val[1], val[0]);
+					if(opts.biff == 4) {
+						BIFF2FmtTable[BIFF2Fmt++] = val[1];
+						for(var b4idx = 0; b4idx < BIFF2Fmt + 163; ++b4idx) if(SSF._table[b4idx] == val[1]) break;
+						if(b4idx >= 163) SSF.load(val[1], BIFF2Fmt + 163);
+					}
+					else SSF.load(val[1], val[0]);
 				} break;
 				case 'BIFF2FORMAT': {
 					BIFF2FmtTable[BIFF2Fmt++] = val;
@@ -660,7 +670,9 @@ function parse_workbook(blob, options/*:ParseOpts*/)/*:Workbook*/ {
 					/* empty */
 				} break;
 				case 'CodeName': {
-					/* empty */
+					/*:: if(!Workbook.WBProps) Workbook.WBProps = {}; */
+					if(!cur_sheet) Workbook.WBProps.CodeName = val || "ThisWorkbook";
+					else wsprops.CodeName = val || wsprops.name;
 				} break;
 				case 'GUIDTypeLib': {
 					/* empty */
@@ -868,7 +880,7 @@ else/*:: if(cfb instanceof CFBContainer) */ {
 	/* Quattro Pro 9 */
 	else if((_data=CFB.find(cfb, 'NativeContent_MAIN')) && _data.content) WorkbookP = WK_.to_workbook(_data.content, (options.type = T, options));
 	else throw new Error("Cannot find Workbook stream");
-	if(options.bookVBA && CFB.find(cfb, '/_VBA_PROJECT_CUR/VBA/dir')) WorkbookP.vbaraw = make_vba_xls(cfb);
+	if(options.bookVBA && cfb.FullPaths && CFB.find(cfb, '/_VBA_PROJECT_CUR/VBA/dir')) WorkbookP.vbaraw = make_vba_xls(cfb);
 }
 
 var props = {};
@@ -894,5 +906,6 @@ function write_xlscfb(wb/*:Workbook*/, opts/*:WriteOpts*/)/*:CFBContainer*/ {
 	}
 	CFB.utils.cfb_add(cfb, wbpath, write_biff_buf(wb, o));
 	// TODO: SI, DSI, CO
+	if(o.biff == 8 && wb.vbaraw) fill_vba_xls(cfb, CFB.read(wb.vbaraw, {type: typeof wb.vbaraw == "string" ? "binary" : "buffer"}));
 	return cfb;
 }

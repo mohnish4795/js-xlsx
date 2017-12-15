@@ -38,7 +38,7 @@ function write_BIFF2LABEL(r/*:number*/, c/*:number*/, val) {
 function write_ws_biff2_cell(ba/*:BufArray*/, cell/*:Cell*/, R/*:number*/, C/*:number*/, opts) {
 	if(cell.v != null) switch(cell.t) {
 		case 'd': case 'n':
-			var v = cell.t == 'd' ? datenum(cell.v) : cell.v;
+			var v = cell.t == 'd' ? datenum(parseDate(cell.v)) : cell.v;
 			if((v == (v|0)) && (v >= 0) && (v < 65536))
 				write_biff_rec(ba, 0x0002, write_BIFF2INT(R, C, v));
 			else
@@ -85,10 +85,19 @@ function write_biff2_buf(wb/*:Workbook*/, opts/*:WriteOpts*/) {
 	return ba.end();
 }
 
+function write_ws_biff8_hlinks(ba/*:BufArray*/, ws) {
+	for(var R=0; R<ws['!links'].length; ++R) {
+		var HL = ws['!links'][R];
+		write_biff_rec(ba, "HLink", write_HLink(HL));
+		if(HL[1].Tooltip) write_biff_rec(ba, "HLinkTooltip", write_HLinkTooltip(HL));
+	}
+	delete ws['!links'];
+}
+
 function write_ws_biff8_cell(ba/*:BufArray*/, cell/*:Cell*/, R/*:number*/, C/*:number*/, opts) {
 	if(cell.v != null) switch(cell.t) {
 		case 'd': case 'n':
-			var v = cell.t == 'd' ? datenum(cell.v) : cell.v;
+			var v = cell.t == 'd' ? datenum(parseDate(cell.v)) : cell.v;
 			/* TODO: emit RK as appropriate */
 			write_biff_rec(ba, "Number", write_Number(R, C, v, opts));
 			return;
@@ -105,9 +114,11 @@ function write_ws_biff8_cell(ba/*:BufArray*/, cell/*:Cell*/, R/*:number*/, C/*:n
 function write_ws_biff8(idx/*:number*/, opts, wb/*:Workbook*/) {
 	var ba = buf_array();
 	var s = wb.SheetNames[idx], ws = wb.Sheets[s] || {};
+	var _sheet/*:WBWSProp*/ = ((((wb||{}).Workbook||{}).Sheets||[])[idx]||{}/*:any*/);
 	var dense = Array.isArray(ws);
 	var ref/*:string*/, rr = "", cols/*:Array<string>*/ = [];
 	var range = safe_decode_range(ws['!ref'] || "A1");
+	var b8 = opts.biff == 8, b5 = opts.biff == 5;
 	write_biff_rec(ba, 0x0809, write_BOF(wb, 0x10, opts));
 	/* ... */
 	write_biff_rec(ba, "CalcMode", writeuint16(1));
@@ -127,6 +138,7 @@ function write_ws_biff8(idx/*:number*/, opts, wb/*:Workbook*/) {
 	write_biff_rec(ba, "Dimensions", write_Dimensions(range, opts));
 	/* ... */
 
+	if(b8) ws['!links'] = [];
 	for(var R = range.s.r; R <= range.e.r; ++R) {
 		rr = encode_row(R);
 		for(var C = range.s.c; C <= range.e.c; ++C) {
@@ -136,8 +148,14 @@ function write_ws_biff8(idx/*:number*/, opts, wb/*:Workbook*/) {
 			if(!cell) continue;
 			/* write cell */
 			write_ws_biff8_cell(ba, cell, R, C, opts);
+			if(b8 && cell.l) ws['!links'].push([ref, cell.l]);
 		}
 	}
+	var cname/*:string*/ = _sheet.CodeName || _sheet.name || s;
+	/* ... */
+	if(b8) write_ws_biff8_hlinks(ba, ws);
+	/* ... */
+	write_biff_rec(ba, "CodeName", write_XLUnicodeString(cname, opts));
 	/* ... */
 	write_biff_rec(ba, "EOF");
 	return ba.end();
@@ -146,18 +164,25 @@ function write_ws_biff8(idx/*:number*/, opts, wb/*:Workbook*/) {
 /* [MS-XLS] 2.1.7.20.3 */
 function write_biff8_global(wb/*:Workbook*/, bufs, opts/*:WriteOpts*/) {
 	var A = buf_array();
+	var _wb/*:WBWBProps*/ = /*::((*/(wb.Workbook||{}).WBProps||{/*::CodeName:"ThisWorkbook"*/}/*:: ):any)*/;
 	var b8 = opts.biff == 8, b5 = opts.biff == 5;
 	write_biff_rec(A, 0x0809, write_BOF(wb, 0x05, opts));
-	write_biff_rec(A, "InterfaceHdr", writeuint16(0x04b0));
+	write_biff_rec(A, "InterfaceHdr", b8 ? writeuint16(0x04b0) : null);
 	write_biff_rec(A, "Mms", writezeroes(2));
 	if(b5) write_biff_rec(A, "ToolbarHdr");
 	if(b5) write_biff_rec(A, "ToolbarEnd");
 	write_biff_rec(A, "InterfaceEnd");
 	write_biff_rec(A, "WriteAccess", write_WriteAccess("SheetJS", opts));
-	write_biff_rec(A, "CodePage", writeuint16(0x04b0));
+	write_biff_rec(A, "CodePage", writeuint16(b8 ? 0x04b0 : 0x04E4));
 	if(b8) write_biff_rec(A, "DSF", writeuint16(0));
-	if(b8) write_biff_rec(A, "RRTabId", write_RRTabId(wb.SheetNames.length));
-	if(b8) write_biff_rec(A, "BuiltInFnGroupCount", writeuint16(0x11));
+	write_biff_rec(A, "RRTabId", write_RRTabId(wb.SheetNames.length));
+	if(b8 && wb.vbaraw) {
+		write_biff_rec(A, "ObProj");
+		// $FlowIgnore
+		var cname/*:string*/ = _wb.CodeName || "ThisWorkbook";
+		write_biff_rec(A, "CodeName", write_XLUnicodeString(cname, opts));
+	}
+	write_biff_rec(A, "BuiltInFnGroupCount", writeuint16(0x11));
 	write_biff_rec(A, "WinProtect", writebool(false));
 	write_biff_rec(A, "Protect", writebool(false));
 	write_biff_rec(A, "Password", writeuint16(0));
@@ -168,21 +193,21 @@ function write_biff8_global(wb/*:Workbook*/, bufs, opts/*:WriteOpts*/) {
 	write_biff_rec(A, "HideObj", writeuint16(0));
 	write_biff_rec(A, "Date1904", writebool(safe1904(wb)=="true"));
 	write_biff_rec(A, "CalcPrecision", writebool(true));
-	write_biff_rec(A, "RefreshAll", writebool(false));
+	if(b8) write_biff_rec(A, "RefreshAll", writebool(false));
 	write_biff_rec(A, "BookBool", writeuint16(0));
 	/* ... */
-	write_biff_rec(A, "UsesELFs", writebool(false));
+	if(b8) write_biff_rec(A, "UsesELFs", writebool(false));
 	var a = A.end();
 
 	var C = buf_array();
-	write_biff_rec(C, "Country", write_Country());
+	if(b8) write_biff_rec(C, "Country", write_Country());
 	/* BIFF8: [SST *Continue] ExtSST */
 	write_biff_rec(C, "EOF");
 	var c = C.end();
 
 	var B = buf_array();
 	var blen = 0, j = 0;
-	for(j = 0; j < wb.SheetNames.length; ++j) blen += 12 + (b8 ? 2 : 1) * wb.SheetNames[j].length;
+	for(j = 0; j < wb.SheetNames.length; ++j) blen += (b8 ? 12 : 11) + (b8 ? 2 : 1) * wb.SheetNames[j].length;
 	var start = a.length + blen + c.length;
 	for(j = 0; j < wb.SheetNames.length; ++j) {
 		write_biff_rec(B, "BoundSheet8", write_BoundSheet8({pos:start, hs:0, dt:0, name:wb.SheetNames[j]}, opts));

@@ -54,7 +54,7 @@ Use readAsBinaryString: (when available) <input type="checkbox" name="userabs" c
 <script>
 /*jshint browser:true */
 /* eslint-env browser */
-/*global Uint8Array, Uint16Array, ArrayBuffer */
+/*global Uint8Array, console */
 /*global XLSX */
 var X = XLSX;
 var XW = {
@@ -80,7 +80,7 @@ var process_wb = (function() {
 	var to_json = function to_json(workbook) {
 		var result = {};
 		workbook.SheetNames.forEach(function(sheetName) {
-			var roa = X.utils.sheet_to_json(workbook.Sheets[sheetName]);
+			var roa = X.utils.sheet_to_json(workbook.Sheets[sheetName], {header:1});
 			if(roa.length) result[sheetName] = roa;
 		});
 		return JSON.stringify(result, 2, 2);

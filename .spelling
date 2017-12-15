@@ -34,6 +34,7 @@ tooltips
 Browserify
 CDNjs
 CommonJS
+Ethercalc
 ExtendScript
 FileSaver
 JavaScriptCore
@@ -65,11 +66,14 @@ config
 customizable
 datagrid
 deduplication
+destructuring
 embeddable
 filesystem
 javascript
 metadata
 natively
+pre-built
+pre-generated
 prepend
 prepended
 repo

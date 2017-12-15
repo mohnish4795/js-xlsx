@@ -53,8 +53,10 @@ init: ## Initial setup for development
 DISTHDR=misc/suppress_export.js
 .PHONY: dist
 dist: dist-deps $(TARGET) bower.json ## Prepare JS files for distribution
+	mkdir -p dist
 	<$(TARGET) sed "s/require('stream')/{}/g;s/require('....*')/undefined/g" > dist/$(TARGET)
 	cp LICENSE dist/
+	uglifyjs shim.js $(UGLIFYOPTS) -o dist/shim.min.js --preamble "$$(head -n 1 bits/00_header.js)"
 	uglifyjs $(DISTHDR) dist/$(TARGET) $(UGLIFYOPTS) -o dist/$(LIB).min.js --source-map dist/$(LIB).min.map --preamble "$$(head -n 1 bits/00_header.js)"
 	misc/strip_sourcemap.sh dist/$(LIB).min.js
 	uglifyjs $(DISTHDR) $(REQS) dist/$(TARGET) $(UGLIFYOPTS) -o dist/$(LIB).core.min.js --source-map dist/$(LIB).core.min.map --preamble "$$(head -n 1 bits/00_header.js)"
@@ -64,15 +66,17 @@ dist: dist-deps $(TARGET) bower.json ## Prepare JS files for distribution
 
 .PHONY: dist-deps
 dist-deps: ## Copy dependencies for distribution
+	mkdir -p dist
 	cp node_modules/codepage/dist/cpexcel.full.js dist/cpexcel.js
 	cp jszip.js dist/jszip.js
 
 .PHONY: aux
 aux: $(AUXTARGETS)
 
+BYTEFILE=dist/xlsx.min.js dist/xlsx.{core,full}.min.js
 .PHONY: bytes
 bytes: ## Display minified and gzipped file sizes
-	for i in dist/xlsx.min.js dist/xlsx.{core,full}.min.js; do printj "%-30s %7d %10d" $$i $$(wc -c < $$i) $$(gzip --best --stdout $$i | wc -c); done
+	for i in $(BYTEFILE); do printj "%-30s %7d %10d" $$i $$(wc -c < $$i) $$(gzip --best --stdout $$i | wc -c); done
 
 .PHONY: graph
 graph: formats.png legend.png ## Rebuild format conversion graph
@@ -86,13 +90,19 @@ legend.png: misc/legend.dot
 nexe: xlsx.exe ## Build nexe standalone executable
 
 xlsx.exe: bin/xlsx.njs xlsx.js
-	nexe -i $< -o $@ --flags
+	tail -n+2 $< | sed 's#\.\./#./xlsx#g' > nexe.js
+	nexe -i nexe.js -o $@
+	rm nexe.js
+
+.PHONY: pkg
+pkg: bin/xlsx.njs xlsx.js ## Build pkg standalone executable
+	pkg $<
 
 ## Testing
 
 .PHONY: test mocha
 test mocha: test.js ## Run test suite
-	mocha -R spec -t 20000
+	mocha -R spec -t 30000
 
 #*                      To run tests for one format, make test_<fmt>
 #*                      To run the core test suite, make test_misc
@@ -176,7 +186,8 @@ old-lint: $(TARGET) $(AUXTARGETS) ## Run jshint and jscs checks
 .PHONY: tslint
 tslint: $(TARGET) ## Run typescript checks
 	#@npm install dtslint typescript
-	@npm run-script dtslint
+	#@npm run-script dtslint
+	dtslint types
 
 .PHONY: flow
 flow: lint ## Run flow checker
@@ -192,11 +203,11 @@ $(COVFMT): cov_%:
 	FMTS=$* make cov
 
 misc/coverage.html: $(TARGET) test.js
-	mocha --require blanket -R html-cov -t 20000 > $@
+	mocha --require blanket -R html-cov -t 30000 > $@
 
 .PHONY: coveralls
 coveralls: ## Coverage Test + Send to coveralls.io
-	mocha --require blanket --reporter mocha-lcov-reporter -t 20000 | node ./node_modules/coveralls/bin/coveralls.js
+	mocha --require blanket --reporter mocha-lcov-reporter -t 30000 | node ./node_modules/coveralls/bin/coveralls.js
 
 READEPS=$(sort $(wildcard docbits/*.md))
 README.md: $(READEPS)
@@ -213,7 +224,7 @@ book: readme graph ## Update summary for documentation
 	<README.md grep -vE "(details|summary)>" > misc/docs/README.md
 
 DEMOMDS=$(sort $(wildcard demos/*/README.md))
-MDLINT=$(DEMODS) $(READEPS) demos/README.md
+MDLINT=$(DEMOMDS) $(READEPS) demos/README.md
 .PHONY: mdlint
 mdlint: $(MDLINT) ## Check markdown documents
 	alex $^

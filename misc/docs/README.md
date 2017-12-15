@@ -123,6 +123,7 @@ enhancements, additional features by request, and dedicated support.
     + [Data Interchange Format (DIF)](#data-interchange-format-dif)
     + [HTML](#html)
     + [Rich Text Format (RTF)](#rich-text-format-rtf)
+    + [Ethercalc Record Format (ETH)](#ethercalc-record-format-eth)
 - [Testing](#testing)
   * [Node](#node)
   * [Browser](#browser)
@@ -179,7 +180,7 @@ The [`demos` directory](demos/) includes sample projects for:
 
 **Frameworks and APIs**
 - [`angular 1.x`](demos/angular/)
-- [`angular 2.x / 4.x`](demos/angular2/)
+- [`angular 2.x / 4.x / 5.x`](demos/angular2/)
 - [`meteor`](demos/meteor/)
 - [`react and react-native`](demos/react/)
 - [`vue 2.x and weex`](demos/vue/)
@@ -191,6 +192,7 @@ The [`demos` directory](demos/) includes sample projects for:
 - [`requirejs`](demos/requirejs/)
 - [`rollup`](demos/rollup/)
 - [`systemjs`](demos/systemjs/)
+- [`typescript`](demos/typescript/)
 - [`webpack 2.x`](demos/webpack/)
 
 **Platforms and Integrations**
@@ -521,6 +523,7 @@ files and output the contents in various formats.  The source is available at
 Some helper functions in `XLSX.utils` generate different views of the sheets:
 
 - `XLSX.utils.sheet_to_csv` generates CSV
+- `XLSX.utils.sheet_to_txt` generates UTF16 Formatted Text
 - `XLSX.utils.sheet_to_html` generates HTML
 - `XLSX.utils.sheet_to_json` generates an array of objects
 - `XLSX.utils.sheet_to_formulae` generates a list of formulae
@@ -667,6 +670,7 @@ Utilities are available in the `XLSX.utils` object and are described in the
 
 - `sheet_to_json` converts a worksheet object to an array of JSON objects.
 - `sheet_to_csv` generates delimiter-separated-values output.
+- `sheet_to_txt` generates UTF16 formatted text.
 - `sheet_to_html` generates HTML output.
 - `sheet_to_formulae` generates a list of the formulae (with value fallbacks).
 
@@ -996,6 +1000,7 @@ may not enforce this constraint.
 
 | Key             | Description                                         |
 |:----------------|:----------------------------------------------------|
+| `CodeName`      | [VBA Project Workbook Code Name](#vba-and-macros)   |
 | `date1904`      | epoch: 0/false for 1900 system, 1/true for 1904     |
 | `filterPrivacy` | Warn or strip personally identifying info on save   |
 
@@ -1250,6 +1255,7 @@ sense when the producer and consumer of files are in the same locale, but that
 is not always the case over the Internet.  To get around this ambiguity, parse
 functions accept the `dateNF` option to override the interpretation of that
 specific format string.
+
 #### Hyperlinks
 
 Hyperlinks are stored in the `l` key of cell objects.  The `Target` field of the
@@ -1266,6 +1272,13 @@ ws['A3'].l = { Target:"http://sheetjs.com", Tooltip:"Find us @ SheetJS.com!" };
 
 Note that Excel does not automatically style hyperlinks -- they will generally
 be displayed as normal text.
+
+Links where the target is a cell or range or defined name in the same workbook
+("Internal Links") are marked with a leading hash character:
+
+```js
+ws['A2'].l = { Target:"#E2" }; /* link to cell E2 */
+```
 
 #### Cell Comments
 
@@ -1319,8 +1332,19 @@ if a sheet is visible is to check if the `Hidden` property is logical truth:
 
 VBA Macros are stored in a special data blob that is exposed in the `vbaraw`
 property of the workbook object when the `bookVBA` option is `true`.  They are
-supported in `XLSM`, `XLSB`, and `BIFF8 XLS` formats.  The `XLSM` and `XLSB`
-writers automatically insert the data blobs if it is present in the workbook.
+supported in `XLSM`, `XLSB`, and `BIFF8 XLS` formats.  The supported format
+writers automatically insert the data blobs if it is present in the workbook and
+associate with the worksheet names.
+
+
+The workbook code name is stored in `wb.Workbook.WBProps.CodeName`.  By default,
+Excel will write `ThisWorkbook` or a translated phrase like `DieseArbeitsmappe`.
+Worksheet and Chartsheet code names are in the worksheet properties object at
+`wb.Workbook.Sheets[i].CodeName`.  Macrosheets and Dialogsheets are ignored.
+
+The readers and writers preserve the code names, but they have to be manually
+set when adding a VBA blob to a different workbook.
+
 
 
 Older versions of Excel also supported a non-VBA "macrosheet" sheet type that
@@ -1348,6 +1372,7 @@ The exported `read` and `readFile` functions accept an options argument:
 | :---------- | ------: | :--------------------------------------------------- |
 |`type`       |         | Input data encoding (see Input Type below)           |
 |`raw`        | false   | If true, plain text parsing will not parse values ** |
+|`codepage`   |         | If specified, use code page when appropriate **      |
 |`cellFormula`| true    | Save formulae to the .f field                        |
 |`cellHTML`   | true    | Parse rich text and save HTML to the `.h` field      |
 |`cellNF`     | false   | Save number format string to the `.z` field          |
@@ -1381,6 +1406,8 @@ The exported `read` and `readFile` functions accept an options argument:
   XLSM and XLSB store the VBA CFB object in `xl/vbaProject.bin`. BIFF8 XLS mixes
   the VBA entries alongside the core Workbook entry, so the library generates a
   new XLSB-compatible blob from the XLS CFB container.
+- `codepage` is applied to BIFF2 - BIFF5 files without `CodePage` records and to
+  CSV files without BOM in `type:"binary"`.  BIFF8 XLS always defaults to 1200.
 - Currently only XOR encryption is supported.  Unsupported error will be thrown
   for files employing other encryption methods.
 - WTF is mainly for development.  By default, the parser will suppress read
@@ -1437,8 +1464,10 @@ Plain text format guessing follows the priority order:
 | XML    | starts with `<`                                                     |
 | RTF    | starts with `{\rt`                                                  |
 | DSV    | starts with `/sep=.$/`, separator is the specified character        |
-| CSV    | more unquoted `","` characters than `"\t"` chars in the first 1024  |
-| TSV    | one of the first 1024 characters is a tab char `"\t"`               |
+| DSV    | more unquoted `";"` chars than `"\t"` or `","` in the first 1024    |
+| TSV    | more unquoted `"\t"` chars than `","` chars in the first 1024       |
+| CSV    | one of the first 1024 characters is a comma `","`                   |
+| ETH    | starts with `socialcalc:version:`                                   |
 | PRN    | (default)                                                           |
 
 - HTML tags include: `html`, `table`, `head`, `meta`, `script`, `style`, `div`
@@ -1497,6 +1526,7 @@ output formats.  The specific file type is controlled with `bookType` option:
 | `xlsm`     | `.xlsm`  |    ZIP    | multi  | Excel 2007+ Macro XML Format    |
 | `xlsb`     | `.xlsb`  |    ZIP    | multi  | Excel 2007+ Binary Format       |
 | `biff8`    | `.xls`   |    CFB    | multi  | Excel 97-2004 Workbook Format   |
+| `biff5`    | `.xls`   |    CFB    | multi  | Excel 5.0/95 Workbook Format    |
 | `biff2`    | `.xls`   |   none    | single | Excel 2.0 Worksheet Format      |
 | `xlml`     | `.xls`   |   none    | multi  | Excel 2003-2004 (SpreadsheetML) |
 | `ods`      | `.ods`   |    ZIP    | multi  | OpenDocument Spreadsheet        |
@@ -1506,8 +1536,10 @@ output formats.  The specific file type is controlled with `bookType` option:
 | `sylk`     | `.sylk`  |   none    | single | Symbolic Link (SYLK)            |
 | `html`     | `.html`  |   none    | single | HTML Document                   |
 | `dif`      | `.dif`   |   none    | single | Data Interchange Format (DIF)   |
-| `rtf`      | `.rtf`   |   none    | single | Rich Text Format                |
+| `dbf`      | `.dbf`   |   none    | single | dBASE II + VFP Extensions (DBF) |
+| `rtf`      | `.rtf`   |   none    | single | Rich Text Format (RTF)          |
 | `prn`      | `.prn`   |   none    | single | Lotus Formatted Text            |
+| `eth`      | `.eth`   |   none    | single | Ethercalc Record Format (ETH)   |
 
 - `compression` only applies to formats with ZIP containers.
 - Formats that only support a single sheet require a `sheet` option specifying
@@ -1685,6 +1717,8 @@ The `txt` output type uses the tab character as the field separator.  If the
 `codepage` library is available (included in full distribution but not core),
 the output will be encoded in `CP1200` and the BOM will be prepended.
 
+`XLSX.utils.sheet_to_txt` takes the same arguments as `sheet_to_csv`.
+
 ### HTML Output
 
 As an alternative to the `writeFile` HTML type, `XLSX.utils.sheet_to_html` also
@@ -1804,7 +1838,7 @@ Despite the library name `xlsx`, it supports numerous spreadsheet file formats:
 | Excel 2007+ Binary Format (XLSB BIFF12)                      |  :o:  |  :o:  |
 | Excel 2003-2004 XML Format (XML "SpreadsheetML")             |  :o:  |  :o:  |
 | Excel 97-2004 (XLS BIFF8)                                    |  :o:  |  :o:  |
-| Excel 5.0/95 (XLS BIFF5)                                     |  :o:  |       |
+| Excel 5.0/95 (XLS BIFF5)                                     |  :o:  |  :o:  |
 | Excel 4.0 (XLS/XLW BIFF4)                                    |  :o:  |       |
 | Excel 3.0 (XLS BIFF3)                                        |  :o:  |       |
 | Excel 2.0/2.1 (XLS BIFF2)                                    |  :o:  |  :o:  |
@@ -1818,12 +1852,13 @@ Despite the library name `xlsx`, it supports numerous spreadsheet file formats:
 | OpenDocument Spreadsheet (ODS)                               |  :o:  |  :o:  |
 | Flat XML ODF Spreadsheet (FODS)                              |  :o:  |  :o:  |
 | Uniform Office Format Spreadsheet (标文通 UOS1/UOS2)         |  :o:  |       |
-| dBASE II/III/IV / Visual FoxPro (DBF)                        |  :o:  |       |
+| dBASE II/III/IV / Visual FoxPro (DBF)                        |  :o:  |  :o:  |
 | Lotus 1-2-3 (WKS/WK1/WK2/WK3/WK4/123)                        |  :o:  |       |
 | Quattro Pro Spreadsheet (WQ1/WQ2/WB1/WB2/WB3/QPW)            |  :o:  |       |
 | **Other Common Spreadsheet Output Formats**                  |:-----:|:-----:|
 | HTML Tables                                                  |  :o:  |  :o:  |
-| RTF Tables                                                   |       |  :o:  |
+| Rich Text Format tables (RTF)                                |       |  :o:  |
+| Ethercalc Record Format (ETH)                                |  :o:  |  :o:  |
 
 ### Excel 2007+ XML (XLSX/XLSM)
 
@@ -1952,10 +1987,12 @@ Many older formats supported only one worksheet:
 
 DBF is really a typed table format: each column can only hold one data type and
 each record omits type information.  The parser generates a header row and
-inserts records starting at the second row of the worksheet.
+inserts records starting at the second row of the worksheet.  The writer makes
+files compatible with Visual FoxPro extensions.
 
 Multi-file extensions like external memos and tables are currently unsupported,
-limited by the general ability to read arbitrary files in the web browser.
+limited by the general ability to read arbitrary files in the web browser.  The
+reader understands DBF Level 7 extensions like DATETIME.
 
 
 #### Symbolic Link (SYLK)
@@ -1998,12 +2035,24 @@ Excel HTML worksheets include special metadata encoded in styles.  For example,
 `mso-number-format` is a localized string containing the number format.  Despite
 the metadata the output is valid HTML, although it does accept bare `&` symbols.
 
+The writer adds type metadata to the TD elements via the `t` tag.  The parser
+looks for those tags and overrides the default interpretation. For example, text
+like `<td>12345</td>` will be parsed as numbers but `<td t="s">12345</td>` will
+be parsed as text.
+
 
 #### Rich Text Format (RTF)
 
 
 Excel RTF worksheets are stored in clipboard when copying cells or ranges from a
 worksheet.  The supported codes are a subset of the Word RTF support.
+
+
+#### Ethercalc Record Format (ETH)
+
+
+[Ethercalc](https://ethercalc.net/) is an open source web spreadsheet powered by
+a record format reminiscent of SYLK wrapped in a MIME multi-part message.
 
 
 
@@ -2173,6 +2222,22 @@ make test -- run mocha test suite
 make misc -- run smaller test suite
 make book -- rebuild README and summary
 make help -- display this message
+```
+
+As explained in [Test Files](#test-files), on Windows the release ZIP file must
+be downloaded and extracted.  If Bash on Windows is available, it is possible
+to run the OSX/Linux workflow.  The following steps prepares the environment:
+
+```bash
+# Install support programs for the build and test commands
+sudo apt-get install make git subversion mercurial
+
+# Install nodejs and NPM within the WSL
+wget -qO- https://deb.nodesource.com/setup_8.x | sudo bash
+sudo apt-get install nodejs
+
+# Install dev dependencies
+sudo npm install -g mocha voc blanket xlsjs
 ```
 
 

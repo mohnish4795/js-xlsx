@@ -5,7 +5,7 @@
 var data = [
 	[1, 2, 3],
 	[true, false, null, "sheetjs"],
-	["foo", "bar", new Date("2014-02-19T14:30Z"), "0.3"],
+	["foo    bar", "baz", new Date("2014-02-19T14:30Z"), "0.3"],
 	["baz", null, "\u0BEE", 3.14159],
 	["hidden"],
 	["visible"]
@@ -84,9 +84,13 @@ ws['!rows'] = wsrows;
 
 /* TEST: hyperlink note: Excel does not automatically style hyperlinks */
 /*
+ws['A4'].l = { Target: "#E2" };
+*/
+XLSX.utils.cell_set_internal_link(ws['A4'], "E2");
+/*
 ws['A3'].l = { Target: "http://sheetjs.com", Tooltip: "Visit us <SheetJS.com!>" };
 */
-XLSX.utils.cell_set_hyperlink(ws['A3'], "http://sheetjs.com", "Visit us <SheetJS.com!>" );
+XLSX.utils.cell_set_hyperlink(ws['A3'], "http://sheetjs.com", "Visit us <SheetJS.com!>");
 
 /* TEST: built-in format */
 /*
@@ -114,7 +118,7 @@ wb.Sheets["Hidden"] = XLSX.utils.aoa_to_sheet(["Hidden".split(""), [1,2,3]]);
 wb.Workbook = {Sheets:[]};
 wb.Workbook.Sheets[1] = {Hidden:1};
 */
-var data_2 = ["Hidden".split(""), [1,2,3]];
+var data_2 = ["Hidden".split(""), [1,true,3,'a',,'c'], [2,false,true,'sh33t',,'j5']];
 XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data_2), "Hidden");
 XLSX.utils.book_set_sheet_visibility(wb, "Hidden", XLSX.utils.consts.SHEET_HIDDEN);
 
@@ -162,16 +166,19 @@ var filenames = [
 	['sheetjs.xlsx', {bookSST:true}],
 	['sheetjs.xlsm'],
 	['sheetjs.xlsb'],
-	['sheetjs.xls', {bookType:'xls'}],
-	['sheetjs.biff2', {bookType:'biff2'}],
+	['sheetjs.biff8.xls', {bookType:'xls'}],
+	['sheetjs.biff5.xls', {bookType:'biff5'}],
+	['sheetjs.biff2.xls', {bookType:'biff2'}],
 	['sheetjs.xml.xls', {bookType:'xlml'}],
 	['sheetjs.ods'],
 	['sheetjs.fods'],
 	['sheetjs.csv'],
 	['sheetjs.txt'],
 	['sheetjs.slk'],
+	['sheetjs.eth'],
 	['sheetjs.htm'],
 	['sheetjs.dif'],
+	['sheetjs.dbf', {sheet:"Hidden"}],
 	['sheetjs.rtf'],
 	['sheetjs.prn']
 ];

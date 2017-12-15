@@ -13,25 +13,25 @@ function safe_parse_wbrels(wbrels, sheets) {
 	return !wbrels || wbrels.length === 0 ? null : wbrels;
 }
 
-function safe_parse_sheet(zip, path/*:string*/, relsPath/*:string*/, sheet, sheetRels, sheets, stype/*:string*/, opts, wb, themes, styles) {
+function safe_parse_sheet(zip, path/*:string*/, relsPath/*:string*/, sheet, idx/*:number*/, sheetRels, sheets, stype/*:string*/, opts, wb, themes, styles) {
 	try {
 		sheetRels[sheet]=parse_rels(getzipstr(zip, relsPath, true), path);
 		var data = getzipdata(zip, path);
 		switch(stype) {
-			case 'sheet': sheets[sheet]=parse_ws(data, path, opts,sheetRels[sheet], wb, themes, styles); break;
+			case 'sheet': sheets[sheet]=parse_ws(data, path, idx, opts, sheetRels[sheet], wb, themes, styles); break;
 			case 'chart':
-				var cs = parse_cs(data, path, opts,sheetRels[sheet], wb, themes, styles);
+				var cs = parse_cs(data, path, idx, opts, sheetRels[sheet], wb, themes, styles);
 				sheets[sheet] = cs;
 				if(!cs || !cs['!chart']) break;
 				var dfile = resolve_path(cs['!chart'].Target, path);
 				var drelsp = get_rels_path(dfile);
-				var draw = parse_drawing(getzipstr(zip, dfile, true), parse_rels(getzipstr(zip,drelsp,true), dfile));
+				var draw = parse_drawing(getzipstr(zip, dfile, true), parse_rels(getzipstr(zip, drelsp, true), dfile));
 				var chartp = resolve_path(draw, dfile);
 				var crelsp = get_rels_path(chartp);
-				cs = parse_chart(getzipstr(zip, chartp, true), chartp, opts, parse_rels(getzipstr(zip, crelsp,true), chartp), wb, cs);
+				cs = parse_chart(getzipstr(zip, chartp, true), chartp, opts, parse_rels(getzipstr(zip, crelsp, true), chartp), wb, cs);
 				break;
-			case 'macro': sheets[sheet]=parse_ms(data, path, opts,sheetRels[sheet], wb, themes, styles); break;
-			case 'dialog': sheets[sheet]=parse_ds(data, path, opts,sheetRels[sheet], wb, themes, styles); break;
+			case 'macro': sheets[sheet]=parse_ms(data, path, idx, opts, sheetRels[sheet], wb, themes, styles); break;
+			case 'dialog': sheets[sheet]=parse_ds(data, path, idx, opts, sheetRels[sheet], wb, themes, styles); break;
 		}
 	} catch(e) { if(opts.WTF) throw e; }
 }
@@ -49,6 +49,8 @@ function parse_zip(zip/*:ZIP*/, opts/*:?ParseOpts*/)/*:Workbook*/ {
 	if(safegetzipfile(zip, 'META-INF/manifest.xml')) return parse_ods(zip, opts);
 	/* UOC */
 	if(safegetzipfile(zip, 'objectdata.xml')) return parse_ods(zip, opts);
+	/* Numbers */
+	if(safegetzipfile(zip, 'Index/Document.iwa')) throw new Error('Unsupported NUMBERS file');
 
 	var entries = keys(zip.files).filter(nodirs).sort();
 	var dir = parse_ct((getzipstr(zip, '[Content_Types].xml')/*:?any*/), opts);
@@ -145,7 +147,7 @@ function parse_zip(zip/*:ZIP*/, opts/*:?ParseOpts*/)/*:Workbook*/ {
 			path = path.replace(/sheet0\./,"sheet.");
 		}
 		relsPath = path.replace(/^(.*)(\/)([^\/]*)$/, "$1/_rels/$3.rels");
-		safe_parse_sheet(zip, path, relsPath, props.SheetNames[i], sheetRels, sheets, stype, opts, wb, themes, styles);
+		safe_parse_sheet(zip, path, relsPath, props.SheetNames[i], i, sheetRels, sheets, stype, opts, wb, themes, styles);
 	}
 
 	if(dir.comments) parse_comments(zip, dir.comments, sheets, sheetRels, opts);
@@ -174,39 +176,44 @@ function parse_zip(zip/*:ZIP*/, opts/*:?ParseOpts*/)/*:Workbook*/ {
 	return out;
 }
 
-/* references to [MS-OFFCRYPTO] */
-function parse_xlsxcfb(cfb, opts/*:?ParseOpts*/)/*:Workbook*/ {
-	var f = 'Version';
-	var data = CFB.find(cfb, f);
-	if(!data || !data.content) throw new Error("ECMA-376 Encrypted file missing " + f);
+/* [MS-OFFCRYPTO] 2.1.1 */
+function parse_xlsxcfb(cfb, _opts/*:?ParseOpts*/)/*:Workbook*/ {
+	var opts = _opts || {};
+	var f = '/!DataSpaces/Version';
+	var data = CFB.find(cfb, f); if(!data || !data.content) throw new Error("ECMA-376 Encrypted file missing " + f);
 	var version = parse_DataSpaceVersionInfo(data.content);
 
 	/* 2.3.4.1 */
-	f = 'DataSpaceMap';
-	data = CFB.find(cfb, f);
-	if(!data || !data.content) throw new Error("ECMA-376 Encrypted file missing " + f);
+	f = '/!DataSpaces/DataSpaceMap';
+	data = CFB.find(cfb, f); if(!data || !data.content) throw new Error("ECMA-376 Encrypted file missing " + f);
 	var dsm = parse_DataSpaceMap(data.content);
-	if(dsm.length != 1 || dsm[0].comps.length != 1 || dsm[0].comps[0].t != 0 || dsm[0].name != "StrongEncryptionDataSpace" || dsm[0].comps[0].v != "EncryptedPackage")
+	if(dsm.length !== 1 || dsm[0].comps.length !== 1 || dsm[0].comps[0].t !== 0 || dsm[0].name !== "StrongEncryptionDataSpace" || dsm[0].comps[0].v !== "EncryptedPackage")
 		throw new Error("ECMA-376 Encrypted file bad " + f);
 
-	f = 'StrongEncryptionDataSpace';
-	data = CFB.find(cfb, f);
-	if(!data || !data.content) throw new Error("ECMA-376 Encrypted file missing " + f);
+	/* 2.3.4.2 */
+	f = '/!DataSpaces/DataSpaceInfo/StrongEncryptionDataSpace';
+	data = CFB.find(cfb, f); if(!data || !data.content) throw new Error("ECMA-376 Encrypted file missing " + f);
 	var seds = parse_DataSpaceDefinition(data.content);
 	if(seds.length != 1 || seds[0] != "StrongEncryptionTransform")
 		throw new Error("ECMA-376 Encrypted file bad " + f);
 
 	/* 2.3.4.3 */
-	f = '!Primary';
-	data = CFB.find(cfb, f);
-	if(!data || !data.content) throw new Error("ECMA-376 Encrypted file missing " + f);
+	f = '/!DataSpaces/TransformInfo/StrongEncryptionTransform/!Primary';
+	data = CFB.find(cfb, f); if(!data || !data.content) throw new Error("ECMA-376 Encrypted file missing " + f);
 	var hdr = parse_Primary(data.content);
 
-	f = 'EncryptionInfo';
-	data = CFB.find(cfb, f);
-	if(!data || !data.content) throw new Error("ECMA-376 Encrypted file missing " + f);
+	f = '/EncryptionInfo';
+	data = CFB.find(cfb, f); if(!data || !data.content) throw new Error("ECMA-376 Encrypted file missing " + f);
 	var einfo = parse_EncryptionInfo(data.content);
 
+	/* 2.3.4.4 */
+	f = '/EncryptedPackage';
+	data = CFB.find(cfb, f); if(!data || !data.content) throw new Error("ECMA-376 Encrypted file missing " + f);
+
+/*:: declare var decrypt_agile:any; */
+	if(einfo[0] == 0x04 && typeof decrypt_agile !== 'undefined') return decrypt_agile(einfo[1], data.content, opts.password || "", opts);
+/*:: declare var decrypt_std76:any; */
+	if(einfo[0] == 0x02 && typeof decrypt_std76 !== 'undefined') return decrypt_std76(einfo[1], data.content, opts.password || "", opts);
 	throw new Error("File is password-protected");
 }
 

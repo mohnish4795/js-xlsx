@@ -19,7 +19,7 @@ can be installed with Bash on Windows or with `cygwin`.
 
 **Frameworks and APIs**
 - [`angular 1.x`](angular/)
-- [`angular 2.x / 4.x`](angular2/)
+- [`angular 2.x / 4.x / 5.x`](angular2/)
 - [`meteor`](meteor/)
 - [`react and react-native`](react/)
 - [`vue 2.x and weex`](vue/)
@@ -31,6 +31,7 @@ can be installed with Bash on Windows or with `cygwin`.
 - [`requirejs`](requirejs/)
 - [`rollup`](rollup/)
 - [`systemjs`](systemjs/)
+- [`typescript`](typescript/)
 - [`webpack 2.x`](webpack/)
 
 **Platforms and Integrations**

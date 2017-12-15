@@ -9,7 +9,7 @@ Despite the library name `xlsx`, it supports numerous spreadsheet file formats:
 | Excel 2007+ Binary Format (XLSB BIFF12)                      |  :o:  |  :o:  |
 | Excel 2003-2004 XML Format (XML "SpreadsheetML")             |  :o:  |  :o:  |
 | Excel 97-2004 (XLS BIFF8)                                    |  :o:  |  :o:  |
-| Excel 5.0/95 (XLS BIFF5)                                     |  :o:  |       |
+| Excel 5.0/95 (XLS BIFF5)                                     |  :o:  |  :o:  |
 | Excel 4.0 (XLS/XLW BIFF4)                                    |  :o:  |       |
 | Excel 3.0 (XLS BIFF3)                                        |  :o:  |       |
 | Excel 2.0/2.1 (XLS BIFF2)                                    |  :o:  |  :o:  |
@@ -23,12 +23,13 @@ Despite the library name `xlsx`, it supports numerous spreadsheet file formats:
 | OpenDocument Spreadsheet (ODS)                               |  :o:  |  :o:  |
 | Flat XML ODF Spreadsheet (FODS)                              |  :o:  |  :o:  |
 | Uniform Office Format Spreadsheet (标文通 UOS1/UOS2)         |  :o:  |       |
-| dBASE II/III/IV / Visual FoxPro (DBF)                        |  :o:  |       |
+| dBASE II/III/IV / Visual FoxPro (DBF)                        |  :o:  |  :o:  |
 | Lotus 1-2-3 (WKS/WK1/WK2/WK3/WK4/123)                        |  :o:  |       |
 | Quattro Pro Spreadsheet (WQ1/WQ2/WB1/WB2/WB3/QPW)            |  :o:  |       |
 | **Other Common Spreadsheet Output Formats**                  |:-----:|:-----:|
 | HTML Tables                                                  |  :o:  |  :o:  |
-| RTF Tables                                                   |       |  :o:  |
+| Rich Text Format tables (RTF)                                |       |  :o:  |
+| Ethercalc Record Format (ETH)                                |  :o:  |  :o:  |
 
 ### Excel 2007+ XML (XLSX/XLSM)
 
@@ -192,10 +193,12 @@ Many older formats supported only one worksheet:
 
 DBF is really a typed table format: each column can only hold one data type and
 each record omits type information.  The parser generates a header row and
-inserts records starting at the second row of the worksheet.
+inserts records starting at the second row of the worksheet.  The writer makes
+files compatible with Visual FoxPro extensions.
 
 Multi-file extensions like external memos and tables are currently unsupported,
-limited by the general ability to read arbitrary files in the web browser.
+limited by the general ability to read arbitrary files in the web browser.  The
+reader understands DBF Level 7 extensions like DATETIME.
 
 </details>
 
@@ -250,6 +253,11 @@ Excel HTML worksheets include special metadata encoded in styles.  For example,
 `mso-number-format` is a localized string containing the number format.  Despite
 the metadata the output is valid HTML, although it does accept bare `&` symbols.
 
+The writer adds type metadata to the TD elements via the `t` tag.  The parser
+looks for those tags and overrides the default interpretation. For example, text
+like `<td>12345</td>` will be parsed as numbers but `<td t="s">12345</td>` will
+be parsed as text.
+
 </details>
 
 #### Rich Text Format (RTF)
@@ -259,6 +267,16 @@ the metadata the output is valid HTML, although it does accept bare `&` symbols.
 
 Excel RTF worksheets are stored in clipboard when copying cells or ranges from a
 worksheet.  The supported codes are a subset of the Word RTF support.
+
+</details>
+
+#### Ethercalc Record Format (ETH)
+
+<details>
+  <summary>(click to show)</summary>
+
+[Ethercalc](https://ethercalc.net/) is an open source web spreadsheet powered by
+a record format reminiscent of SYLK wrapped in a MIME multi-part message.
 
 </details>
 
