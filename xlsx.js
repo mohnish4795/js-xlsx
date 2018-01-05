@@ -19039,7 +19039,7 @@ function sheet_to_json_custom(sheet, opts) {
 				if(hdr[C] != null) { row[hdr[C]] = defval; isempty = false; }
 				continue;
 			}
-			v = (val.v && (val.v.toString().trim().toLowerCase() == '-' || val.v.toString().trim().toLowerCase() == 'null')) ? null : val.v;
+			v = (val.v && (val.v.toString().trim() == '' || val.v.toString().trim().toLowerCase() == '-' || val.v.toString().trim().toLowerCase() == 'null')) ? null : val.v;
 			switch(val.t){
 				case 'z': if(v == null) break; continue;
 				case 'e': continue;
