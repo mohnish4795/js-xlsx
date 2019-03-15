@@ -20570,6 +20570,8 @@ function sheet_to_json_custom(sheet, opts) {
 	var mandatoryCols = o.mandatoryCols;
 	var rowsToInclude = o.rowsToInclude;
 	var validPropValues = o.validPropValues;
+	var rows_to_exclude = o.rows_to_exclude;
+	var rows_excluded = [];
 	if(o.header === 1) header = 1;
 	else if(o.header === "A") header = 2;
 	else if(Array.isArray(o.header)) header = 3;
@@ -20602,7 +20604,7 @@ function sheet_to_json_custom(sheet, opts) {
 		}
 	}
 	var row = (header === 1) ? [] : {};
-	for (R = r.s.r + offset; R <= r.e.r; ++R) {
+	R_loop: for (R = r.s.r + offset; R <= r.e.r; ++R) {
 		rr = encode_row(R);
 		isempty = true;
 		if(header === 1) row = [];
@@ -20611,7 +20613,7 @@ function sheet_to_json_custom(sheet, opts) {
 			if(Object.defineProperty) try { Object.defineProperty(row, '__rowNum__', {value:R, enumerable:false}); } catch(e) { row.__rowNum__ = R; }
 			else row.__rowNum__ = R;
 		}
-		if(!dense || sheet[R]) for (C = r.s.c; C <= r.e.c; ++C) {
+		if(!dense || sheet[R]) C_loop: for (C = r.s.c; C <= r.e.c; ++C) {
 			val = dense ? sheet[R][C] : sheet[cols[C] + rr];
 			if(val === undefined || val.t === undefined) {
 				if (rowsToInclude && mandatoryCols && rowsToInclude.includes(R.toString()) && mandatoryCols.includes(hdr[C])) {
@@ -20623,6 +20625,10 @@ function sheet_to_json_custom(sheet, opts) {
 				continue;
 			}
 			v = (val.v && (val.v.toString().trim() == '' || val.v.toString().trim().toLowerCase() == '-' || val.v.toString().trim().toLowerCase() == 'null')) ? null : val.v;
+			if (v && header !== 1 && hdr[C] === 'certno' && (!rows_to_exclude || (rows_to_exclude && rows_to_exclude.includes(v.toString().trim())))) {
+				rows_excluded.push(v.toString().trim());
+				continue R_loop;
+			}
 			switch(val.t){
 				case 'z': if(v == null) break; continue;
 				case 'e': continue;
@@ -20657,9 +20663,8 @@ function sheet_to_json_custom(sheet, opts) {
 	out.length = outi;
 	if (emptyValCols.length) return {emptyValCols: emptyValCols};
 	else if (Object.keys(reportObj).length) return {reportObj: reportObj};
-	else return out;
+	else return {out: out, rows_excluded: rows_excluded};
 }
-
 var qreg = /"/g;
 function make_csv_row(sheet, r, R, cols, fs, rs, FS, o) {
 	var isempty = true;
