@@ -20763,9 +20763,7 @@ function sheet_to_json_custom(sheet, opts) {
 		if((isempty === false) || (header === 1 ? o.blankrows !== false : !!o.blankrows)) out[outi++] = row;
 	}
 	out.length = outi;
-	if (emptyValCols.length) return {emptyValCols: emptyValCols};
-	else if (Object.keys(reportObj).length) return {reportObj: reportObj};
-	else return {out: out, rows_excluded: rows_excluded};
+	return {out: out, rows_excluded: rows_excluded, emptyValCols: emptyValCols, reportObj: reportObj};
 }
 var qreg = /"/g;
 function make_csv_row(sheet, r, R, cols, fs, rs, FS, o) {
